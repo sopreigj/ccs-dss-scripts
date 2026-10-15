@@ -4,7 +4,7 @@
 
 - 需要"同一个会话里连续做几步"的流程 → 用 `../workflows/`（这里的脚本做不到）。
 - 逐脚本的参数、退出码、"不做"清单 → [`../docs/reference/ref-scripts.md`](../docs/reference/ref-scripts.md)
-- 为什么这么分类 → [`../docs/reference/ref-atomic-scripts.md`](../docs/reference/ref-atomic-scripts.md)
+- 为什么这么分类、只读与改状态的区分 → [`../docs/reference/ref-atomic-scripts.md`](../docs/reference/ref-atomic-scripts.md)
 
 ## 分类
 
@@ -19,12 +19,9 @@
 ## 每个脚本的两个文件
 
 ```
-ccs20_0_1_<动作>.js     本体
-ccs20_0_1_<动作>.vbs    启动器（双击可用）
+ccs12_2_0_<动作>.js     本体
+ccs12_2_0_<动作>.vbs    启动器（双击可用）
 ```
 
 **两个文件必须同目录、同名成对**：启动器靠自身位置找同名 `.js`。
 代码文件一律 ASCII，中文只进 `.md`。
-
-脚本**必须经运行器调用**（运行器会在命令行里插入脚本名），
-判定看退出码、原因看输出。

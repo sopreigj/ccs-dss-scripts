@@ -4,11 +4,11 @@
 
 | 想做什么 | 用哪个脚本 |
 |---|---|
-| 往一个地址写一个值 | `atomic/memory/ccs20_0_1_mem_write.js` |
-| 把一段内存填成同一个值 | `atomic/memory/ccs20_0_1_mem_fill.js` |
-| 写一个 CPU 寄存器 | `atomic/register/ccs20_0_1_write_reg.js` |
-| 执行一个赋值表达式（变量、外设寄存器域） | `atomic/expression/ccs20_0_1_write_expr.js` |
-| 写入之后还要运行，再看写进去的值有没有留住 | `workflows/ccs20_0_1_load_write_run_read.js` |
+| 往一个地址写一个值 | `atomic/memory/ccs12_2_0_mem_write.js` |
+| 把一段内存填成同一个值 | `atomic/memory/ccs12_2_0_mem_fill.js` |
+| 写一个 CPU 寄存器 | `atomic/register/ccs12_2_0_write_reg.js` |
+| 执行一个赋值表达式（变量、外设寄存器域） | `atomic/expression/ccs12_2_0_write_expr.js` |
+| 写入之后还要运行，再看写进去的值有没有留住 | `workflows/ccs12_2_0_load_write_run_read.js` |
 
 ## 三个必须知道的语义
 
@@ -20,7 +20,9 @@
 正确的验证姿势是**写、跑一段、再回读**，而且要在同一个会话里：
 
 ```bat
-"%CCS_ROOT%\ccs\scripting\run.bat" workflows\ccs20_0_1_load_write_run_read.js "<ccxml>" "<out>" 2000 --settle 500 --set "your_symbol.Var = 1" --read "your_symbol.Var"
+set CCS_WRITE_EXPR=your_symbol.Var = 1
+set CCS_EVAL_EXPR=your_symbol.Var
+"%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat" workflows\ccs12_2_0_load_write_run_read.js "<ccxml>" "<out>" 2000 --settle 500
 ```
 
 `--settle 500` 的意思是"先让程序跑 500 毫秒把启动初始化跑过去，再写"。
@@ -47,29 +49,25 @@
 
 ```bat
 :: 挑一个固件不会碰的地址（比如数据区外的空闲 RAM）证明"写路径是通的"
-"%CCS_ROOT%\ccs\scripting\run.bat" atomic\memory\ccs20_0_1_mem_write.js 0xD000 0xBEEF 16
-"%CCS_ROOT%\ccs\scripting\run.bat" atomic\memory\ccs20_0_1_mem_read.js 0xD000 16 1
+"%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat" atomic\memory\ccs12_2_0_mem_write.js 0xD000 0xBEEF 16
+"%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat" atomic\memory\ccs12_2_0_mem_read.js 0xD000 16 1
 ```
 
 这里两次调用是分开的会话，能读回同一个值，是因为**固件不会去写这块空闲内存**。
 反过来说：如果你挑的是固件自己的变量区，分开两次调用很可能读回别的值——那是会话边界的后果，
 不是写失败。要证明那种地址上的写入生效，请用上面 `--settle` 的工作流。
 
-## 表达式怎么传
+## 表达式怎么传（重要）
 
-本栈的运行器**原样透传**参数，所以 `--set "x = 1"` 这种写法可以直接用。
-
-**唯一的坑在 PowerShell**：用 `cmd /c "..."` 拼命令时，PowerShell 会先处理一遍引号，
-内部的引号可能被吃掉而报参数形状错误。两个稳妥做法：直接用 `cmd`，
-或者把表达式放进环境变量：
+`--set "x = 1"` 这种参数里有 `=` 与空格，**直接写在命令行上会被 cmd 拆掉**，
+表现是 `... was unexpected at this time`、退出码 255、输出里连标记行都没有。所以：
 
 | 环境变量 | 用途 |
 |---|---|
 | `CCS_WRITE_EXPR` | 默认的赋值表达式 |
-| `CCS_EVAL_EXPR` | 默认的求值表达式（`;` 分隔） |
+| `CCS_EVAL_EXPR` | 默认的求值表达式（多个用 `;` 分隔） |
 
-> 这一点与另一套实现不同：那边的运行器**会吃参数**，含 `=` 或空格时
-> **必须**走环境变量。见 [`../reference/ref-stack-differences.md`](../reference/ref-stack-differences.md)。
+也可以把赋值表达式写成**不含空格**的形式（如果语言允许），但走环境变量是更稳的做法。
 
 ## 安全提醒
 

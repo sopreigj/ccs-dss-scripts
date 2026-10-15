@@ -1,55 +1,76 @@
-// 通用编排层驱动门面（CCS 20.0.1 实现）。契约就是本文件导出的名字表（见文件末尾的 ORCH_DRIVER）。
+// Orchestration driver facade (CCS 12.2.0 implementation).
+// Contract: the name table exported by session/orch_driver.js.
 //
-// 本门面把 session/ 与 cli/ 的助手映射成编排层一致的表面，orchestration/ 的共享
-// 源码只准用这些名字：原始 session 对象、BigInt/字符串差异、run(false)/runAsynch 差异
-// 全部留在本文件里。session 由本驱动持有——一次脚本一个会话。
+// WHY THE orch* PREFIX: session/session.js exposes its helpers as GLOBAL functions
+// (openTarget, parseArgs, hex, finishOk, ...). A top-level function of the same name in
+// this file would clobber them when the entry loads it -- and because ES3 hoists function
+// declarations, capturing the original before the redefinition would still grab the new
+// one and recurse forever. So every implementation here is named orch*, and the common
+// names live only on the ORCH_DRIVER object that entries and shared mains consume.
 //
-// ES3 子集（test/static_checks.js 机械检查禁词）：var/function、
-// 无 let/const/箭头/模板串/Object.keys/JSON。
-// 本表故意不含 flash/CSM 通路：加密线解析期守卫留在原子脚本，共享层碰不到扳机。
-var sess = require("./session.js");
-var cli = require("./cli.js");
-
+// ARGV: measured on this machine, the top-level `arguments` seen inside a load()'d file
+// IS the entry script's argument list (probe: entry foo bar -> loaded lib sees len=2 a0=foo),
+// so parseArgs(spec) can hide argv here exactly as the 20.x facade does with process.argv.
+//
+// All session.js globals are referenced lazily INSIDE functions (never at top level), so
+// `require()` of this file under node does not throw -- that is what lets the cross-repo
+// key-set diff load both drivers. ES3 subset, ASCII only (repo rule D9).
 var _session = null;
 var _symbolsPath = null;
+var _argv = arguments;
 
 function _req() {
     if (_session === null) throw new Error("orch_driver: openTarget() has not been called");
     return _session;
 }
 
-// argv 偏移：run.bat 把脚本与参数交给 launcher，launcher 再插入目标脚本名，所以脚本看到的
-// process.argv 是 [node.exe, launcher.mjs, <script.js>, ...用户参数]——用户参数从 index 3 起
-// （26 个脚本共用的约定）。直接 `node <script.js> ...` 调用会少两段，参数会错位。
-function parseArgs(spec) {
-    return cli.parseArgs(process.argv.slice(3), spec);
+// Java longs and evaluate() strings arrive as either a JS number or a wrapper whose
+// toString() is the text (12.2.0 watch_write carries the same caution). Number() parses
+// both "0x..." and decimal text, so one normaliser covers both shapes.
+function _num(value) {
+    if (typeof value === "number") return value;
+    var n = Number("" + value);
+    if (isNaN(n)) n = parseInt("" + value, 10);
+    return n;
 }
-function requiredArg(positional, index, name, usage) {
-    return cli.requiredArg(positional, index, name, usage);
+
+// MEASURED '=' rejoin pre-pass: dss.bat cuts "--set x=1" at the '=' (not at the space) - a transport defect the
+// contract assigns to THIS layer (same family as envList). The 20.x transport does not drop
+// '=', so having this pre-pass only here is a legitimate per-stack override.
+function _rejoinSetPairs(argv) {
+    var out = [];
+    for (var i = 0; i < argv.length; i++) {
+        var token = "" + argv[i];
+        out.push(token);
+        if (token !== "--set") continue;
+        if (i + 1 >= argv.length) continue;
+        var id = "" + argv[i + 1];
+        if (id.indexOf("=") >= 0) { out.push(id); i++; continue; }
+        if (i + 2 >= argv.length) { out.push(id); i++; continue; }
+        var raw = "" + argv[i + 2];
+        if (raw.length > 1 && raw.substring(0, 2) === "--") { out.push(id); i++; continue; }
+        out.push(id + "=" + raw);
+        i += 2;
+    }
+    return out;
 }
-function requireAbsoluteFile(path, label) {
-    return cli.requireAbsoluteFile(path, label);
-}
-function requireAbsolutePath(path, label) {
-    return cli.requireAbsolutePath(path, label);
-}
-function parseAddress(text, label) {
-    return cli.parseAddress(text, label);
-}
-function parseInteger(text, label) {
-    return cli.parseInteger(text, label);
-}
-function parseNumber(text, label) {
-    return cli.parseNumber(text, label);
-}
-function parseBitSize(text, label) {
-    return cli.parseBitSize(text, label);
-}
-function usageError(message, usage) {
-    cli.usageError(message, usage);
-}
-function envList(name) {
-    var raw = process.env[name];
+function orchParseArgs(spec) { return parseArgs(_rejoinSetPairs(_argv), spec); }
+function orchRequiredArg(positional, index, name, usage) { return requiredArg(positional, index, name, usage); }
+function orchRequireAbsoluteFile(path, label) { return requireAbsoluteFile(path, label); }
+function orchRequireAbsolutePath(path, label) { return requireAbsolutePath(path, label); }
+function orchParseAddress(text, label) { return parseAddress(text, label); }
+function orchParseInteger(text, label) { return parseInteger(text, label); }
+function orchParseNumber(text, label) { return parseNumber(text, label); }
+// Argument-order divergence the facade absorbs: this stack's parseBitSize is (text, allowed, label)
+// with allowed REQUIRED (calling it as (text, label) makes the label the receiver of
+// allowed.join and throws "Cannot find function join" -- measured by the first smoke run).
+// The contract signature is (text, label), with the allowed set baked in behind it. The set
+// below mirrors what the contract fixes, so every implementation accepts the same bit sizes.
+var ORCH_ALLOWED_BIT_SIZES = [8, 16, 24, 32, 40, 48, 64];
+function orchParseBitSize(text, label) { return parseBitSize(text, ORCH_ALLOWED_BIT_SIZES, label); }
+function orchUsageError(message, usage) { usageError(message, usage); }
+function orchEnvList(name) {
+    var raw = java.lang.System.getenv(name);
     if (!raw) return [];
     var parts = ("" + raw).split(";");
     var out = [];
@@ -60,214 +81,257 @@ function envList(name) {
     return out;
 }
 
-function openTarget(ccxmlPath) {
-    // 这两行日志在原始 session 层没有，在驱动里补齐，共享层不再各打一遍。
-    printLog("Configuring target configuration: " + ccxmlPath);
-    _session = sess.openTarget(ccxmlPath);
+// The library's openTarget already prints "Configuring target configuration: ..." and
+// "Opening debug session..." (kept in the same order every original script printed), so
+// unlike the 20.x facade this one adds no log line of its own.
+function orchOpenTarget(ccxmlPath) {
+    _session = openTarget(ccxmlPath);
 }
-function loadProgram(outPath) {
+function orchLoadProgram(outPath) {
     _req().memory.loadProgram(outPath);
 }
-// Explicit symbol load for the shared main's --symbols-only mode: same lazy per-path
-// semantics as evalExpr/runToBreakpoint already use internally (one concept, one function).
-function loadSymbols(symbolsPath) {
-    _ensureSymbols(symbolsPath);
-}
-function readPC() {
-    return sess.readPC(_req());
-}
-function runTarget() {
-    _req().target.run(false);
-}
-function runForMs(ms) {
-    runTarget();
-    sess.sleep(ms);
-    _req().target.halt();
-    return readPC();
-}
-function haltTarget() {
-    _req().target.halt();
-}
-// 严格查询：错误向上传播，绝不把"查询失败"吞成 false——load_run 一类脚本的
-// 承诺是"目标在跑"，查询失败必须失败（waitUntilHalted 的轮询仍走 session.js 的安静版，行为不变）。
-function isHalted() {
-    return _req().target.isHalted();
-}
-function waitUntilHalted(timeoutMs) {
-    return sess.waitUntilHalted(_req(), timeoutMs);
-}
-function step(kind) {
-    // asm 走的是本栈既有的那次调用（板测 0x301bfc -> 0x301bfd -> 0x301bff -> 0x301c01）；
-    // 机制差异留在这里，不进共享代码。
-    if (kind === "into") _req().target.stepInto();
-    else if (kind === "over") _req().target.stepOver();
-    else if (kind === "out") _req().target.stepOut();
-    else if (kind === "asm") _req().target.stepInto(true);
-    else cli.usageError("step kind must be into|over|out|asm, got: " + kind, null);
-}
-// 符号表按路径惰性加载一次：sample_exprs 会对同一批表达式反复求值，不能每次重载（GEL_SymbolLoad 是秒级的）。
-function _ensureSymbols(symbolsPath) {
+// Explicit symbol load for the shared main's --symbols-only mode; evalExpr reuses it so the
+// lazy per-path rule lives in exactly one place.
+function orchLoadSymbols(symbolsPath) {
     if (symbolsPath && symbolsPath !== _symbolsPath) {
-        sess.loadSymbols(_req(), symbolsPath);
+        loadSymbols(_req(), symbolsPath);
         _symbolsPath = symbolsPath;
     }
 }
-function evalExpr(expr, symbolsPath) {
-    _ensureSymbols(symbolsPath);
-    var value = _req().expressions.evaluate(expr);
-    // 输出格式按本栈的已实测行为——对整数给 "0x… (十进制)"。
-    if (typeof value === "bigint") return "0x" + value.toString(16) + " (" + value.toString(10) + ")";
-    return String(value);
+function orchReadPC() {
+    return hex(_num(_req().expression.evaluate("PC")));
 }
-// 采样/写回用的原始单元格串：**保持既有 CSV 列格式**——本栈对整型只给
-// "0x…"（CSV 列类型稳定，evalExpr 的 "0x… (十进制)" 带空格括号会毁掉下游按 hex 的解析），
-// 其余类型 toString。
-function evalRaw(expr, symbolsPath) {
-    _ensureSymbols(symbolsPath);
-    var value = _req().expressions.evaluate(expr);
-    if (typeof value === "bigint") return "0x" + value.toString(16);
-    return String(value);
+function orchRunTarget() {
+    _req().target.runAsynch();
 }
-// 整文件写入：共享层拼好文本（含 \r\n）一次性落盘——字节一致，行尾不交给平台分隔符。
-function writeTextFile(path, text) {
-    require("fs").writeFileSync(path, text);
+function orchRunForMs(ms) {
+    orchRunTarget();
+    sleepMs(ms);
+    _req().target.halt();
+    return orchReadPC();
 }
-// 复合操作内部用的原始数值求值（"已在 X"判命中要按数值比 PC，不能用带括号的展示格式）。
-function _rawEval(expr) {
-    return Number(_req().expressions.evaluate(expr));
+function orchHaltTarget() {
+    _req().target.halt();
 }
-function sleepMs(ms) {
-    sess.sleep(ms);
+// STRICT query: errors propagate - load_run's three-outcome semantics must
+// tell "the query failed" from "the target is running", and swallowing an exception into
+// false would state a failure as a fact (the exact style the shared workstream rejects).
+function orchIsHalted() {
+    return _req().target.isHalted();
 }
-function printLog(msg) {
-    console.log(msg);
+// Quiet variant for the poll loop: one failed query counts as "not halted yet" and polling
+// continues - a timeout is then reported honestly by the caller. This is the board-proven
+// behaviour of waitUntilHalted; it stays untouched.
+function _isHaltedQuiet() {
+    try { return _req().target.isHalted(); } catch (e) { return false; }
 }
-function hex(value) {
-    return "0x" + Number(value).toString(16);
+// Same 50 ms poll loop the workflows already use (ccs12_2_0_step / ccs12_2_0_watch_write).
+function orchWaitUntilHalted(timeoutMs) {
+    var deadline = new Date().getTime() + timeoutMs;
+    while (new Date().getTime() < deadline) {
+        if (_isHaltedQuiet()) return true;
+        sleepMs(50);
+    }
+    return _isHaltedQuiet();
 }
-function readMem(address, bitSize, count) {
-    var raw = _req().memory.read(address, count, bitSize);
+function orchStep(kind) {
+    if (kind === "into") _req().target.sourceStep.into();
+    else if (kind === "over") _req().target.sourceStep.over();
+    else if (kind === "out") _req().target.sourceStep.out();
+    else if (kind === "asm") {
+        // The shared main accepts asm (the other interface exposes it as stepInto(true));
+        // on this stack the assembly steppers live on target.asmStep, a container whose method
+        // name was never measured on this install. This refuses to ship a guessed call - keeping
+        // that narrowing, upgraded from a generic usage error to a stated reason
+        // (contract: per-stack behaviour overrides allowed here).
+        usageError("assembly stepping is not available on this stack: the asm steppers"
+            + " live on target.asmStep and that method name was never measured here"
+            + " (decision: no guessed calls; the other interface exposes asm as"
+            + " stepInto(true))", null);
+    } else usageError("step kind must be into|over|out|asm, got: " + kind, null);
+}
+// evaluate() returns the stack's own string form; contract rule 4 keeps it as-is.
+function orchEvalExpr(expr, symbolsPath) {
+    orchLoadSymbols(symbolsPath);
+    return "" + _req().expression.evaluate(expr);
+}
+// Raw cell string for sampling/write-back: this stack's evaluate already
+// returns the native string that IS the CSV cell format (byte-compatible with the old
+// workflows/ccs12_2_0_sample_exprs.js "" + evaluate).
+function orchEvalRaw(expr, symbolsPath) {
+    orchLoadSymbols(symbolsPath);
+    return "" + _req().expression.evaluate(expr);
+}
+// Whole-file write: the shared layer builds the text (with \r\n) and it is
+// written verbatim, never via a platform line separator - byte-identical to 20.x's
+// fs.writeFileSync.
+function orchWriteTextFile(path, text) {
+    var w = new java.io.FileWriter(path);
+    try { w.write(text); } finally { w.close(); }
+}
+function orchSleepMs(ms) { sleepMs(ms); }
+function orchPrintLog(msg) { printLog(msg); }
+function orchHex(value) { return hex(value); }
+// DATA page, not PROGRAM (measured): a peripheral register
+// such as GPBMUX2 at 0x6F98 lives only in data space - page 0 throws Error 0x20000 there
+// while page 1 returns the value; RAM and flash read the same in either page, and the
+// target's running/halted state changes nothing. The page is stack plumbing: the shared
+// layer keeps address/bitSize/count and never sees it.
+var _PAGE_DATA = Packages.com.ti.debug.engine.scripting.Memory.Page.DATA;
+function orchReadMem(address, bitSize, count) {
+    var raw = _req().memory.readData(_PAGE_DATA, address, bitSize, count);
     var out = [];
-    for (var i = 0; i < raw.length; i++) out.push(Number(raw[i]));
+    for (var i = 0; i < raw.length; i++) {
+        var v = _num(raw[i]);
+        // 32-bit reads arrive sign-extended on this engine (the pin_drive line measured it);
+        // <=16-bit values print correctly unnormalised, so only the 32-bit case is forced.
+        if (bitSize === 32) v = v >>> 0;
+        out.push(v);
+    }
     return out;
 }
-function writeMem(address, value, bitSize) {
-    _req().memory.write(address, value, bitSize);
+function orchWriteMem(address, value, bitSize) {
+    _req().memory.writeData(_PAGE_DATA, address, value, bitSize);
 }
 
-function addBreakpoint(location) {
-    var id = _req().breakpoints.add(location);
-    if (typeof id === "number" && id < 0) {
+// add() idiom copied from workflows/ccs12_2_0_run_to_bp.js: a 0x literal goes in as the
+// parsed NUMBER, a symbol name as the STRING; negative id means not created.
+function orchAddBreakpoint(location) {
+    var id;
+    if (typeof location === "number") {
+        id = _req().breakpoint.add(location);
+    } else if (/^0[xX]/.test("" + location)) {
+        id = _req().breakpoint.add(parseAddress("" + location, "location"));
+    } else {
+        id = _req().breakpoint.add(location);
+    }
+    var n = _num(id);
+    if (isNaN(n) || n < 0) {
         throw new Error("breakpoint could not be set at " + location + " (add returned " + id + ")");
     }
-    return id;
+    return n;
 }
-function removeBreakpoint(id) {
-    try { _req().breakpoints.remove(id); } catch (e) { /* 不存在也要吞掉：清理不该改变结局 */ }
+function orchRemoveBreakpoint(id) {
+    try { _req().breakpoint.remove(id); } catch (e) { /* absent must not change the verdict */ }
 }
-function removeAllBreakpoints() {
-    try { _req().breakpoints.removeAll(); } catch (e) { /* 同上 */ }
+function orchRemoveAllBreakpoints() {
+    try { _req().breakpoint.removeAll(); } catch (e) { /* same */ }
 }
-// workflows/ccs20_0_1_run_to_bp.js 的已验证三步：解析地址 → "已在 X" 判命中 → run + 等待 + PC 比对。
-// 静默返回结构化数据；文案（"Breakpoint HIT at …" 等）由共享层打印。
-function runToBreakpoint(location, timeoutMs, symbolsPath) {
-    _ensureSymbols(symbolsPath);
-    var breakpointAddress = null;
-    try {
-        breakpointAddress = _rawEval(location);
-    } catch (err) {
-        if (/^0x[0-9a-fA-F]+$/.test(location)) breakpointAddress = Number(location);
+// The three verified steps from workflows/ccs12_2_0_run_to_bp.js: resolve the address
+// (0x literal -> parseAddress, symbol -> evaluate, neither -> null), treat "already at X"
+// as a hit (loadProgram parks the CPU at main), else run + poll + compare PCs.
+// Silent: the shared main prints, this returns data only.
+function orchRunToBreakpoint(location, timeoutMs, symbolsPath) {
+    orchLoadSymbols(symbolsPath);
+    var bpAddress = null;
+    if (/^0[xX]/.test("" + location)) {
+        bpAddress = parseAddress("" + location, "location");
+    } else {
+        try { bpAddress = _num(_req().expression.evaluate(location)); } catch (e) { bpAddress = null; }
     }
-    var pcNow = _rawEval("PC");
-    if (breakpointAddress !== null && pcNow === breakpointAddress) {
-        return { hit: true, alreadyAt: true, halted: true, pc: readPC(), expected: hex(breakpointAddress) };
+    var pcNow = _num(_req().expression.evaluate("PC"));
+    if (bpAddress !== null && pcNow === bpAddress) {
+        return { hit: true, alreadyAt: true, halted: true, pc: hex(pcNow), expected: hex(bpAddress) };
     }
-    var id = addBreakpoint(location);
-    runTarget();
-    var halted = sess.waitUntilHalted(_req(), timeoutMs);
-    var observedPC = _rawEval("PC");
-    removeBreakpoint(id);
-    var hit = halted && breakpointAddress !== null && observedPC === breakpointAddress;
-    return { hit: hit, alreadyAt: false, halted: halted, pc: hex(observedPC), expected: breakpointAddress === null ? null : hex(breakpointAddress) };
+    var id = orchAddBreakpoint(location);
+    _req().target.runAsynch();
+    var halted = orchWaitUntilHalted(timeoutMs);
+    var observed = _num(_req().expression.evaluate("PC"));
+    orchRemoveBreakpoint(id);
+    var hit = halted && bpAddress !== null && observed === bpAddress;
+    return {
+        hit: hit, alreadyAt: false, halted: halted,
+        pc: hex(observed),
+        expected: bpAddress === null ? null : hex(bpAddress)
+    };
 }
-// 本栈已验证流程：把 Hardware Configuration.Type 改成 Watchpoint 会重建整套属性 id，
-// 必须切换之后重新按 type 定位（切换前枚举到的 id 全部失效）。
-function watchWrite(address, access, skipCount) {
-    var props = _req().breakpoints.createProperties(1);
-    _req().breakpoints.setProperty(props, "Hardware Configuration.Type", "Watchpoint");
-    var detailed = _req().breakpoints.getDetailedProperties(props);
-    var locationProperty = null;
-    for (var i = 0; i < detailed.length; i++) {
-        if (detailed[i].type === "location") { locationProperty = detailed[i]; break; }
+// the same decision -- THE FLOW BELOW IS BOARD-MEASURED (F28335 +
+// XDS100v1, CCS 12.2.0: watch on the WATCH_ADDR address halted the running firmware within 2000 ms).
+// Discovered by board probes. The property names are NOT the ones
+// in TI's msp430f169_watchpoints.js example -- that example's "Type.Trigger 0" does not
+// exist on CCS 12.2.0 (measured, three probes); what exists:
+//   1. createProperties(<AET index found via getTypes(), not a hard-coded 1>)
+//   2. setString("Hardware Configuration.Type", "Watchpoint") -- rebuilds the sub-tree,
+//      exactly the 20.x Type-first mechanism; READ THE VALUE BACK before trusting it
+//   3. setString("Hardware Configuration.Type.Trigger Type.Location", "" + address)
+//      setString("Hardware Configuration.Type.Trigger Type.Memory", access) -- Write|Read
+//      optional "...Trigger Type.Skip Count" (the set name is measured; its EFFECT is not)
+//   4. haltOnTrigger via getBoolean("...Action Type.Halt CPU") BEFORE add -- it is a
+//      BOOLEAN property; getString throws "not a string ..." on it. No per-id query exists
+//      after add (Breakpoint: add/remove/removeAll/createProperties/getTypes/loadConfig/
+//      saveConfig only), so the pre-add read is the readback.
+function orchWatchWrite(address, access, skipCount) {
+    var aet = 1;
+    var types = _req().breakpoint.getTypes();
+    for (var i = 0; i < types.length; i++) {
+        if (("" + types[i]) === "AET") { aet = i; break; }
     }
-    if (!locationProperty) {
-        throw new Error("this target does not expose a location property for hardware watchpoints");
+    var props = _req().breakpoint.createProperties(aet);
+    props.setString("Hardware Configuration.Type", "Watchpoint");
+    var typeBack = "" + props.getString("Hardware Configuration.Type");
+    if (typeBack !== "Watchpoint") {
+        throw new Error("watchpoint Type did not take (readback \"" + typeBack + "\")");
     }
-    _req().breakpoints.setProperty(props, locationProperty.id, address);
-    _req().breakpoints.setProperty(props, "Hardware Configuration.Type.Trigger Type.Memory", access);
+    props.setString("Hardware Configuration.Type.Trigger Type.Location", "" + address);
+    props.setString("Hardware Configuration.Type.Trigger Type.Memory", access);
     if (skipCount > 0) {
-        _req().breakpoints.setProperty(props, "Hardware Configuration.Type.Trigger Type.Skip Count", skipCount);
+        props.setString("Hardware Configuration.Type.Trigger Type.Skip Count", "" + skipCount);
     }
-    var id = _req().breakpoints.addWithProperties(props);
-    var enabled = _req().breakpoints.getProperty(id, "Hardware Configuration.Type.Action Type.Halt CPU");
-    return { id: id, haltOnTrigger: enabled };
+    var haltBack;
+    try {
+        haltBack = props.getBoolean("Hardware Configuration.Type.Action Type.Halt CPU");
+    } catch (e) { haltBack = null; }
+    var id = _num(_req().breakpoint.add(props));
+    if (isNaN(id) || id < 0) {
+        throw new Error("hardware watchpoint could not be set at " + address + " (add returned " + id + ")");
+    }
+    return { id: id, haltOnTrigger: haltBack };
 }
 
-function releaseOnExit() {
-    sess.releaseOnExit();
-}
-function finishOk() {
-    sess.finishQuietly();
-    process.exit(cli.EXIT_OK);
-}
-function finishFail(reason) {
-    console.error(reason);
-    sess.shutdownQuietly();
-    process.exit(cli.EXIT_FAIL);
-}
+function orchReleaseOnExit() { releaseOnExit(); }
+function orchFinishOk() { finishOk(); }
+function orchFinishFail(reason) { finishFail(reason); }
 
 var ORCH_DRIVER = {
     sentinel: "ccs-orch-driver-v1",
-    parseArgs: parseArgs,
-    requiredArg: requiredArg,
-    requireAbsoluteFile: requireAbsoluteFile,
-    requireAbsolutePath: requireAbsolutePath,
-    parseAddress: parseAddress,
-    parseInteger: parseInteger,
-    parseNumber: parseNumber,
-    parseBitSize: parseBitSize,
-    usageError: usageError,
-    envList: envList,
-    openTarget: openTarget,
-    loadProgram: loadProgram,
-    loadSymbols: loadSymbols,
-    readPC: readPC,
-    runTarget: runTarget,
-    runForMs: runForMs,
-    haltTarget: haltTarget,
-    isHalted: isHalted,
-    waitUntilHalted: waitUntilHalted,
-    step: step,
-    evalExpr: evalExpr,
-    evalRaw: evalRaw,
-    writeTextFile: writeTextFile,
-    sleepMs: sleepMs,
-    printLog: printLog,
-    hex: hex,
-    readMem: readMem,
-    writeMem: writeMem,
-    addBreakpoint: addBreakpoint,
-    removeBreakpoint: removeBreakpoint,
-    removeAllBreakpoints: removeAllBreakpoints,
-    runToBreakpoint: runToBreakpoint,
-    watchWrite: watchWrite,
-    releaseOnExit: releaseOnExit,
-    finishOk: finishOk,
-    finishFail: finishFail,
+    parseArgs: orchParseArgs,
+    requiredArg: orchRequiredArg,
+    requireAbsoluteFile: orchRequireAbsoluteFile,
+    requireAbsolutePath: orchRequireAbsolutePath,
+    parseAddress: orchParseAddress,
+    parseInteger: orchParseInteger,
+    parseNumber: orchParseNumber,
+    parseBitSize: orchParseBitSize,
+    usageError: orchUsageError,
+    envList: orchEnvList,
+    openTarget: orchOpenTarget,
+    loadProgram: orchLoadProgram,
+    loadSymbols: orchLoadSymbols,
+    readPC: orchReadPC,
+    runTarget: orchRunTarget,
+    runForMs: orchRunForMs,
+    haltTarget: orchHaltTarget,
+    isHalted: orchIsHalted,
+    waitUntilHalted: orchWaitUntilHalted,
+    step: orchStep,
+    evalExpr: orchEvalExpr,
+    evalRaw: orchEvalRaw,
+    writeTextFile: orchWriteTextFile,
+    sleepMs: orchSleepMs,
+    printLog: orchPrintLog,
+    hex: orchHex,
+    readMem: orchReadMem,
+    writeMem: orchWriteMem,
+    addBreakpoint: orchAddBreakpoint,
+    removeBreakpoint: orchRemoveBreakpoint,
+    removeAllBreakpoints: orchRemoveAllBreakpoints,
+    runToBreakpoint: orchRunToBreakpoint,
+    watchWrite: orchWatchWrite,
+    releaseOnExit: orchReleaseOnExit,
+    finishOk: orchFinishOk,
+    finishFail: orchFinishFail,
 };
 
-// 导出哨兵：orchestration/ 的入口用同一个 sentinel 值确认共享 main 真的被加载进来了
-// （require 缺文件天然抛错，这里的哨兵是给"载入的是不是这份文件"用的）。
 if (typeof module !== "undefined" && module.exports) {
     module.exports = ORCH_DRIVER;
 }

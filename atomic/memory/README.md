@@ -4,11 +4,11 @@
 
 | 脚本 | 一句话 |
 |---|---|
-| `ccs20_0_1_mem_read.js` | 读一段内存 |
-| `ccs20_0_1_mem_write.js` | 往地址写一个值 |
-| `ccs20_0_1_mem_fill.js` | 把一段内存填成同一个值 |
-| `ccs20_0_1_mem_export.js` | 导出到文件 |
-| `ccs20_0_1_mem_import.js` | 从文件导入 |
+| `ccs12_2_0_mem_read.js` | 读一段内存 |
+| `ccs12_2_0_mem_write.js` | 往地址写一个值 |
+| `ccs12_2_0_mem_fill.js` | 把一段内存填成同一个值 |
+| `ccs12_2_0_mem_export.js` | 导出到文件 |
+| `ccs12_2_0_mem_import.js` | 从文件导入 |
 
 每个脚本都配同名 `.vbs`。逐参数说明与文件格式见
 [`../../docs/reference/ref-scripts.md`](../../docs/reference/ref-scripts.md) 与

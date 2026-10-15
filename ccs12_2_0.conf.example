@@ -1,0 +1,37 @@
+; ccs12_2_0 项目配置文件（机器本地文件，不入库）
+; 
+; 所有消费方都读取本文件：examples\*.bat、*.vbs 启动器以及 .js（parseArgs
+; 的 confFill）——机器/项目相关的值只在这里维护。
+; 本文件已被 .gitignore 排除；随仓库发布的是 ccs12.conf.example。首次使用：复制
+; 示例文件，改名为 ccs12.conf，并填入本机实际值。
+; 优先级按【键】分别成立，不是一条合并公式：
+;   ccs_root  = 环境变量 CCS12_ROOT > 本文件 > 报错（只对 *.vbs 启动器有效）
+;   ccxml/out = 命令行/显式参数 > 对话框预填 > 环境变量 CCS_CCXML / CCS_OUT > 本文件 > 报错/空预填
+; 注意：examples\*.bat 走自己的链，不读 CCS12_ROOT；它们的 ccs_root 一级是"本文件 > CCS_ROOT > 报错"，
+;       ccxml/out 一级是"%1/%2 > CCS_CCXML / CCS_OUT > 本文件 > 报错"。
+; 固件配方四键（eval_expr / write_expr / watch_addr / settle_ms）只认本文件：缺键时消费方 .bat
+; 报错、.vbs 弹窗空预填、.js 在 confFill 命中而键缺失时给指向 example 的用法错误
+; （缺文件本身不报错——没命中 confFill 就不读它）。没有内置回落（两仓同口径）。
+; 格式：key=value，键两侧不要留空格（值内部的空格与 = 不受限，write_expr 即如此）；
+;       整行注释以 ; 开头；段名可省略不写
+
+[paths]
+; CCS 12.2.0 安装根目录（dss.bat 位于 %ccs_root%\ccs\ccs_base\scripting\bin\）
+; 填你自己的安装位置：CCS 的默认安装根是 <盘符>:\ti\<版本目录>
+ccs_root=<你的 CCS 安装根>
+; 目标配置文件 .ccxml 的绝对路径
+ccxml=<你的目标配置文件>
+; 固件 .out 文件的绝对路径
+out=<你的固件文件>
+
+; --- 固件配方（换固件 / 换项目时改这四个） ---
+; 默认表达式：load_set 读回、phase_d 管线、eval_expr 弹窗预填
+eval_expr=your_default_variable
+; 默认赋值表达式：load_set 的 CCS_WRITE_EXPR、write_expr 弹窗预填
+write_expr=your_default_variable = 1
+; 默认观察点地址：breakpoint_step 第 3 步、driver_smoke 默认值——必须填
+; 固件持续写入的地址，否则 driver_smoke 的 watchWrite 步骤会超时
+; （0x0000 视为未填）
+watch_addr=0x0000
+; 写变量前的启动等待毫秒数（--settle）
+settle_ms=500

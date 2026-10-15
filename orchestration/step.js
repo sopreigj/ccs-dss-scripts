@@ -23,7 +23,7 @@
 // underlying library does it is per stack and that difference belongs to the driver. This
 // shared code only relies on the contract: a driver that cannot offer a measured
 // assembly-stepper entry REFUSES asm with a stated reason, rather than shipping a guessed
-// call. (one implementation maps it to stepInto(true); the other implementation's assembly steppers live on
+// call. (one implementation maps it to stepInto(true); the other interface's assembly steppers live on
 // a container whose method name was never measured there, so it refuses.)
 //
 // Stepping needs a stopped CPU: the target state is checked before the loop and a

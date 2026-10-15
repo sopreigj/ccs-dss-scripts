@@ -22,5 +22,3 @@
 复制 `pipeline_template.bat`，保留它的 `call` / 延时 / 判定结构，换掉步骤列表。
 组合方式的选择（该用 `atomic/` 还是 `workflows/`、能不能拆）见
 [`../docs/guides/gu-compose-your-own.md`](../docs/guides/gu-compose-your-own.md)。
-
-**判定原语与另一套实现同名同契约**：它存在的意义就是让同一份流水线骨架能在两套之间复用。

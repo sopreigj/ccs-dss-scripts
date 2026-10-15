@@ -1,76 +1,124 @@
 @echo off
 setlocal
 
-:: 示例：烧录 → 写变量（WRITE_EXPR，取自 ccs20_0_1.conf）→ 运行 2 秒 → 读回（单会话）
+rem Run from the repository root: the .js scripts find session\session.js by walking up
+rem from the process CWD, so a caller may start this pipeline from anywhere but the
+rem child processes must not inherit that directory.
+cd /d "%~dp0.."
+
+:: Example: load -> set a variable -> run 2s -> read variables
 :: Usage: load_set_run_read.bat [ccxml_path] [out_path]
-:: 路径与固件配方默认值都来自仓库根的 ccs20_0_1.conf；缺键直接报错（没有内置回落）。
+:: If arguments are omitted, the defaults below are used.
+:: To use another board/chip, pass your own ccxml and out file, e.g.:
+::   load_set_run_read.bat <ccxml_path> <out_path>
 ::
-:: 为什么必须用工作流脚本：程序变量活不过会话边界。用两个原子脚本
-:: "write_expr 写 1 → eval_expr 读回"会读到 0（每个脚本都会连接目标即复位）。
-::
-:: --settle（毫秒取自 ccs20_0_1.conf 的 SETTLE_MS，默认 500）的作用：烧录后立刻写、再运行，读回是 0——写入被程序启动阶段的初始化覆盖了；
-:: 先让程序跑 500 ms 再写，同样的写入能留住（读回 1）。四个对照试验与证据见
-:: session/session.js（会话边界）。断言"写进去有效"必须靠"settle + 运行 + 回读"，而不是靠赋值没报错。
+:: WHY THE WORKFLOW: program variables do not survive a session boundary. The old chain
+:: "write_expr writes 1 -> eval_expr reads it back" would read 0 in the later session,
+:: because every script connects and resets the target. The single workflow does
+:: load -> settle -> write -> run -> read inside ONE session.
+:: --settle 500: writing right after load gets overwritten by startup initialization
+:: (read back 0); letting the program run 500 ms first makes the same write survive
+:: (read back 1). Four-cell controlled test: session/session.js (session boundary).
+:: The assignment contains '=' and spaces, which dss.bat cannot carry as a positional
+:: argument (measured: cmd-level "= was unexpected at this time."), so the expressions
+:: travel in CCS_WRITE_EXPR / CCS_EVAL_EXPR -- the documented env channel
+:: (see session/orch_driver.js and session/session.js).
 
-set "ROOT=%~dp0.."
-set "CONFIG=%ROOT%\ccs20_0_1.conf"
-
-set "CCXML_CFG=" & set "OUT_CFG=" & set "ROOT_CFG=" & set "EVAL_CFG=" & set "WRITE_CFG=" & set "SETTLE_CFG="
-if exist "%CONFIG%" for /f "usebackq tokens=1* delims== eol=#" %%a in ("%CONFIG%") do (
-    if /i "%%a"=="CCXML" set "CCXML_CFG=%%b"
-    if /i "%%a"=="OUT" set "OUT_CFG=%%b"
-    if /i "%%a"=="CCS_ROOT" set "ROOT_CFG=%%b"
-    if /i "%%a"=="EVAL_EXPR" set "EVAL_CFG=%%b"
-    if /i "%%a"=="WRITE_EXPR" set "WRITE_CFG=%%b"
-    if /i "%%a"=="SETTLE_MS" set "SETTLE_CFG=%%b"
+:: Defaults come from ccs12_2_0.conf at the repository root (see ccs12_2_0.conf.example).
+:: Precedence is PER KEY, not one merged order (see ccs12_2_0.conf.example):
+::   ccxml    : %1, then CCS_CCXML, then ccs12_2_0.conf [ccxml], then FAIL (exit 1)
+::   out      : %2, then CCS_OUT, then ccs12_2_0.conf [out], then FAIL (exit 1)
+::   ccs_root : ccs12_2_0.conf [ccs_root], then CCS_ROOT, then FAIL (exit 1)
+:: The .vbs launchers read CCS12_2_0_ROOT instead; setting that variable has no effect here.
+:: No built-in defaults since (portability fix, same rule on both implementations).
+:: The firmware recipe (eval_expr / write_expr / settle_ms) comes from ccs12_2_0.conf too -
+:: changing firmware means editing the conf file, never this script.
+set ROOT=%~dp0..
+for /f "usebackq eol=; tokens=1* delims==" %%a in ("%~dp0..\ccs12_2_0.conf") do (
+    if /i "%%a"=="ccs_root"   set "CCS_ROOT=%%b"
+    if /i "%%a"=="ccxml"      set "CCXML_CFG=%%b"
+    if /i "%%a"=="out"        set "OUT_CFG=%%b"
+    if /i "%%a"=="eval_expr"  set "EVAL_CFG=%%b"
+    if /i "%%a"=="write_expr" set "WRITE_CFG=%%b"
+    if /i "%%a"=="settle_ms"  set "SETTLE_CFG=%%b"
 )
-
-set "RUN=%CCS20_0_1_ROOT%"
-if "%RUN%"=="" set "RUN=%ROOT_CFG%"
-if "%RUN%"=="" (
-    echo ERROR: CCS_ROOT not configured - set env CCS20_0_1_ROOT or set CCS_ROOT in ccs20_0_1.conf.
+if not defined CCS_ROOT (
+    echo CCS12_2_0_RESULT=FAIL config: ccs_root not configured in ccs12_2_0.conf
     exit /b 1
 )
-set "RUN=%RUN%\ccs\scripting\run.bat"
-if not exist "%RUN%" (
-    echo ERROR: run.bat not found: %RUN%
+set "DSS=%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat"
+if not exist "%DSS%" (
+    echo CCS12_2_0_RESULT=FAIL config: dss.bat not found: %DSS%
     exit /b 1
 )
 
 set "CCXML=%~1"
 set "OUT=%~2"
+if "%CCXML%"=="" set "CCXML=%CCS_CCXML%"
 if "%CCXML%"=="" set "CCXML=%CCXML_CFG%"
 if "%CCXML%"=="" (
-    echo ERROR: CCXML not configured - pass it as arg 1 or set CCXML in ccs20_0_1.conf.
+    echo CCS12_2_0_RESULT=FAIL config: ccxml not configured in ccs12_2_0.conf
     exit /b 1
 )
+if "%OUT%"=="" set "OUT=%CCS_OUT%"
 if "%OUT%"=="" set "OUT=%OUT_CFG%"
 if "%OUT%"=="" (
-    echo ERROR: OUT not configured - pass it as arg 2 or set OUT in ccs20_0_1.conf.
+    echo CCS12_2_0_RESULT=FAIL config: out not configured in ccs12_2_0.conf
+    exit /b 1
+)
+if not defined WRITE_CFG (
+    echo CCS12_2_0_RESULT=FAIL config: write_expr not configured in ccs12_2_0.conf
+    exit /b 1
+)
+if not defined SETTLE_CFG (
+    echo CCS12_2_0_RESULT=FAIL config: settle_ms not configured in ccs12_2_0.conf
+    exit /b 1
+)
+:: eval_expr may be a comma list; this example reads back the first entry only.
+for /f "tokens=1 delims=," %%e in ("%EVAL_CFG%") do set "EVAL_EXPR=%%e"
+if not defined EVAL_EXPR (
+    echo CCS12_2_0_RESULT=FAIL config: eval_expr not configured in ccs12_2_0.conf
     exit /b 1
 )
 
-:: 固件配方只认 ccs20_0_1.conf：换固件改配置键，不改本文件。
-:: EVAL_EXPR 允许写逗号分隔的列表，本示例只用逗号前第一个。
-for /f "tokens=1 delims=," %%e in ("%EVAL_CFG%") do set "EXPR=%%e"
-if "%EXPR%"=="" (
-    echo ERROR: EVAL_EXPR not configured in ccs20_0_1.conf.
-    exit /b 1
-)
-if "%WRITE_CFG%"=="" (
-    echo ERROR: WRITE_EXPR not configured in ccs20_0_1.conf.
-    exit /b 1
-)
-if "%SETTLE_CFG%"=="" (
-    echo ERROR: SETTLE_MS not configured in ccs20_0_1.conf.
+:: dss.bat's own process exit code is 0 whatever the script does (measured with
+:: System.exit(1), System.exit(7), a natural end and a nonexistent script path).
+:: The cmd-level errorlevel does carry the JVM's code when it is read after the
+:: call -- on a following line, or with delayed expansion on (cmd /v:on) -- but
+:: without delayed expansion it is expanded before the call runs and is always 0
+:: (a measurement artifact, measured for System.exit(7) as well). A natural end
+:: and a nonexistent script path both read 0 too, so a 0 proves neither that the
+:: script ran nor that it succeeded. Each step is therefore judged by the
+:: CCS12_2_0_RESULT marker line in the log captured below, never by %errorlevel%.
+set "LOG1=%TEMP%\ccs12_2_0_load_set_run_read_1.log"
+set "CCS_WRITE_EXPR=%WRITE_CFG%"
+set "CCS_EVAL_EXPR=%EVAL_EXPR%"
+call "%DSS%" "%ROOT%\workflows\ccs12_2_0_load_write_run_read.js" "%CCXML%" "%OUT%" 2000 --settle %SETTLE_CFG% > "%LOG1%" 2>&1
+set "CCS_WRITE_EXPR="
+set "CCS_EVAL_EXPR="
+findstr /b /c:"CCS12_2_0_RESULT=OK" "%LOG1%" >nul
+if errorlevel 1 (
+    echo Load/set/run/read failed.
+    call :show_failure "%LOG1%"
+    del "%LOG1%" >nul 2>&1
+    echo CCS12_2_0_RESULT=FAIL load_write_run_read
     exit /b 1
 )
 
-:: --set / --read 的表达式含空格与等号，必须用英文双引号括起来。
-call "%RUN%" "%ROOT%\workflows\ccs20_0_1_load_write_run_read.js" "%CCXML%" "%OUT%" 2000 --settle %SETTLE_CFG% --set "%WRITE_CFG%" --read "%EXPR%"
-if %errorlevel% neq 0 (
-    echo Workflow failed.
-    exit /b %errorlevel%
-)
+del "%LOG1%" >nul 2>&1
+echo CCS12_2_0_RESULT=OK
+exit /b 0
 
-echo Done. Check the "Read back" section above for the value that survived the run.
+:: Show why a step failed. dss.bat hides the exit status, so the only reliable
+:: evidence is the log captured above: print the CCS12_2_0_RESULT marker line (the
+:: reason the step was judged failed) and then the captured output. The whole
+:: log is printed rather than a fixed tail because batch has no tail primitive
+:: that is both safe against output containing cmd metacharacters and free of
+:: interactive paging.
+:show_failure
+echo --- CCS12_2_0_RESULT marker ---
+findstr /c:"CCS12_2_0_RESULT=" "%~1"
+if errorlevel 1 echo --- no CCS12_2_0_RESULT line was found in the log ---
+echo --- captured output ---
+type "%~1"
+exit /b 0

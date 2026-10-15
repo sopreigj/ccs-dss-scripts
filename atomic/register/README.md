@@ -4,8 +4,8 @@
 
 | 脚本 | 一句话 |
 |---|---|
-| `ccs20_0_1_read_reg.js` | 读一个或多个 CPU 寄存器 |
-| `ccs20_0_1_write_reg.js` | 写一个 CPU 寄存器 |
+| `ccs12_2_0_read_reg.js` | 读一个或多个 CPU 寄存器 |
+| `ccs12_2_0_write_reg.js` | 写一个 CPU 寄存器 |
 
 每个脚本都配同名 `.vbs`。逐参数说明见
 [`../../docs/reference/ref-scripts.md`](../../docs/reference/ref-scripts.md) 的 `atomic/register/` 一节。
@@ -14,5 +14,3 @@
 "写进去与读回来不同"当作失败**——否则正常的写入会变成假失败。需要严格校验时请自己比对读回值。
 
 **外设寄存器不在这里**：它们是内存映射的，用 `../memory/` 的脚本或表达式赋值来写。
-
-**没有"列出全部寄存器"的接口**：寄存器名要自己知道。

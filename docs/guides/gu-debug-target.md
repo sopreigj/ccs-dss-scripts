@@ -4,13 +4,10 @@
 
 | 想做什么 | 用哪个脚本 |
 |---|---|
-| 设一个断点并运行到它 | `workflows/ccs20_0_1_run_to_bp.js` |
-| 单步 N 次并打印每次的 PC | `workflows/ccs20_0_1_step.js` |
-| 问"**是谁**在改这个变量" | `workflows/ccs20_0_1_watch_write.js` |
-
-> 另有一套 另一套实现在这里多一个脚本（在断点上挂一个写动作）。
-> 本技术栈没有对应能力，所以**本仓库没有那个工作流**——这是两套之间少数**无法镜像**的差异之一，
-> 见 [`../reference/ref-stack-differences.md`](../reference/ref-stack-differences.md)。
+| 设一个断点并运行到它 | `workflows/ccs12_2_0_run_to_bp.js` |
+| 单步 N 次并打印每次的 PC | `workflows/ccs12_2_0_step.js` |
+| 在断点上挂一个写动作（GEL 表达式） | `workflows/ccs12_2_0_bp_write_action.js` |
+| 问"**是谁**在改这个变量" | `workflows/ccs12_2_0_watch_write.js` |
 
 ## 为什么没有"设断点"和"跑到断点"两个独立脚本
 
@@ -51,8 +48,8 @@
 
 - **单步要求目标已经停机**。脚本会先检查状态，目标在运行就直接以明确的原因失败，
   而不是硬走一步。
-- **汇编级单步（`--kind asm`）**在本技术栈上走的是底层提供的汇编级单步调用；
-  另一套实现里这个能力存在栈间差异，本栈没有这个限制。
+- **汇编级单步（`--kind asm`）在本技术栈上是"有就支持、没有就明确拒绝"**。当你看到它拒绝时，
+  那是刻意的：与其猜一个调用名，不如明确说做不到。
 
 ## 观察点：回答"谁在改这个变量"
 
@@ -69,7 +66,7 @@
 ## 例：跑到 main
 
 ```bat
-"%CCS_ROOT%\ccs\scripting\run.bat" workflows\ccs20_0_1_run_to_bp.js "<ccxml>" "<out>" main
+"%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat" workflows\ccs12_2_0_run_to_bp.js "<ccxml>" "<out>" main
 ```
 
 如果加载结束后目标已经停在 `main`，你会看到它报告"已经在那里"——这是成功。
@@ -77,8 +74,8 @@
 ## 例：看谁在改某个变量
 
 ```bat
-:: 第 3 个参数是地址；省略则读配置文件里的 WATCH_ADDR
-"%CCS_ROOT%\ccs\scripting\run.bat" workflows\ccs20_0_1_watch_write.js "<ccxml>" "<out>" 0xC000
+:: 第 3 个参数是地址；省略则读配置文件里的 watch_addr
+"%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat" workflows\ccs12_2_0_watch_write.js "<ccxml>" "<out>" 0xC000
 ```
 
 ## 采样：定期读一批表达式
@@ -86,7 +83,7 @@
 不属于调试三件事，但常与它们一起用：
 
 ```bat
-"%CCS_ROOT%\ccs\scripting\run.bat" workflows\ccs20_0_1_sample_exprs.js "<ccxml>" "<out>" 200 5 "<csv_file>" "your_symbol.Var" "PC"
+"%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat" workflows\ccs12_2_0_sample_exprs.js "<ccxml>" "<out>" 200 5 "<csv_file>" "your_symbol.Var" "PC"
 ```
 
 含义是"每 200 毫秒采一次，共 5 次，把结果写进这个 CSV"。两条语义要记住：

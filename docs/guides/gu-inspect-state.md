@@ -4,11 +4,11 @@
 
 | 想知道 | 用哪个脚本 |
 |---|---|
-| 连得上吗 | `atomic/target/ccs20_0_1_check_connection.js` |
-| 目标身份与状态：核名、是否连接、是否停机、PC、可用复位类型、关键调试设置 | `atomic/target/ccs20_0_1_target_state.js` |
-| 某个地址上一段内存 | `atomic/memory/ccs20_0_1_mem_read.js` |
-| 一个或多个 CPU 寄存器 | `atomic/register/ccs20_0_1_read_reg.js` |
-| 一个表达式（变量、外设寄存器域） | `atomic/expression/ccs20_0_1_eval_expr.js` |
+| 连得上吗 | `atomic/target/ccs12_2_0_check_connection.js` |
+| 目标身份与状态：核名、是否连接、是否停机、PC、可用复位类型、关键调试设置 | `atomic/target/ccs12_2_0_target_state.js` |
+| 某个地址上一段内存 | `atomic/memory/ccs12_2_0_mem_read.js` |
+| 一个或多个 CPU 寄存器 | `atomic/register/ccs12_2_0_read_reg.js` |
+| 一个表达式（变量、外设寄存器域） | `atomic/expression/ccs12_2_0_eval_expr.js` |
 
 ## 最重要的一件事：每条命令都是"此刻的活值"
 
@@ -24,11 +24,11 @@
 
 ```bat
 :: 一个会话内完成：烧录 → 跑 2000 毫秒 → 停机 → 读两个表达式
-"%CCS_ROOT%\ccs\scripting\run.bat" workflows\ccs20_0_1_load_run_read.js "<ccxml>" "<out>" 2000 "your_symbol.Var" "PC"
+"%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat" workflows\ccs12_2_0_load_run_read.js "<ccxml>" "<out>" 2000 "your_symbol.Var" "PC"
 ```
 
-也可以在**同一次调用**里读原始内存地址：把地址作为表达式写进表达式列表即可，
-前提是同一会话里已经加载过符号表（`loadProgram` 会顺带加载）。
+也可以在**同一次调用**里读原始内存地址：`load_run_read` 的表达式列表里可以直接写
+一个地址形式的表达式，前提是同一会话里已经加载过符号表（`loadProgram` 会顺带加载）。
 
 ## 按符号名读必须有符号表
 
@@ -38,35 +38,33 @@
 - 或者显式给它一个固件文件：
 
 ```bat
-"%CCS_ROOT%\ccs\scripting\run.bat" atomic\expression\ccs20_0_1_eval_expr.js "<ccxml>" --symbols "<out>" "your_symbol.Var"
+"%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat" atomic\expression\ccs12_2_0_eval_expr.js "<ccxml>" --symbols "<out>" "your_symbol.Var"
 ```
 
-不带符号表又要按名字求值，就会得到"找不到标识符"。这是**明确的失败**，不是"值是 0"。
+不带符号表又要按名字求值，就会得到 `identifier not found`。这是**明确的失败**，不是"值是 0"。
 
 ## 例：一套只读体检
 
 ```bat
 :: 在仓库根目录执行。省略路径参数时从配置文件补齐
-set RUN=%CCS_ROOT%\ccs\scripting\run.bat
+set DSS="%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat"
 
-"%RUN%" atomic\target\ccs20_0_1_check_connection.js
-"%RUN%" atomic\target\ccs20_0_1_target_state.js
-"%RUN%" atomic\register\ccs20_0_1_read_reg.js PC
-"%RUN%" atomic\memory\ccs20_0_1_mem_read.js 0xC000 16 4
+%dss.bat% atomic\target\ccs12_2_0_check_connection.js
+%dss.bat% atomic\target\ccs12_2_0_target_state.js
+%dss.bat% atomic\register\ccs12_2_0_read_reg.js PC
+%dss.bat% atomic\memory\ccs12_2_0_mem_read.js 0xC000 16 4
 ```
 
-`target_state` 会额外报告几件容易看错的事：
+`target_state` 会额外报告两件容易看错的事：
 
-- **核名那一行来自目标配置文件的身份，不是探测出来的**。用 v2 的配置连 v1 的探针，
+- **`board` / `core` 这一行来自目标配置文件的身份，不是探测出来的**。用 v2 的配置连 v1 的探针，
   它照样显示配置里写的型号。别用它判断"手上插的是哪个仿真器"。
-- 它报告的调试设置（例如连接时是否自动复位）是**当前会话读到的值**，不是配置承诺。
-  注意这个设置的值本身**不能解释**"连接时目标到底发生了什么"——那是另一件事。
-  实测结论是**连接不复位 RAM**（判据与结果见
-  [`../reference/ref-api-scripting.md`](../reference/ref-api-scripting.md) 的"已经实测确认的行为"一节）。
+- 它报告的调试设置（如是否连接后自动复位）是**当前会话读到的值**，不是配置承诺。
 
 ## 关于地址
 
-地址必须带 `0x` 前缀。裸数字会被拒绝而不是猜。
+地址必须带 `0x` 前缀。裸数字会被拒绝而不是猜——历史上曾经有过"同一个地址按十进制与十六进制
+各自解释"的缺陷，这条规则就是为此。
 
 内存读取的位宽可以是 8 / 16 / 24 / 32 / 40 / 48 / 64 位，具体参数位置见
 [`../reference/ref-scripts.md`](../reference/ref-scripts.md)。

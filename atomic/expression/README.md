@@ -4,8 +4,8 @@
 
 | 脚本 | 一句话 |
 |---|---|
-| `ccs20_0_1_eval_expr.js` | 求值并打印一个或多个表达式 |
-| `ccs20_0_1_write_expr.js` | 执行一个赋值表达式 |
+| `ccs12_2_0_eval_expr.js` | 求值并打印一个或多个表达式 |
+| `ccs12_2_0_write_expr.js` | 执行一个赋值表达式 |
 
 每个脚本都配同名 `.vbs`。逐参数说明见
 [`../../docs/reference/ref-scripts.md`](../../docs/reference/ref-scripts.md) 的 `atomic/expression/` 一节。
@@ -15,6 +15,6 @@
 
 **赋值就是求值一个赋值表达式**：本技术栈没有独立的赋值接口。
 
-**表达式含空格或 `=` 时可以直接写在命令行上**（本栈运行器原样透传）；
-但如果是在 PowerShell 里拼 `cmd /c`，引号可能被 PowerShell 先处理掉，见
+**表达式里有 `=` 或空格时不要直接写在命令行上**：底层运行器会在解析阶段中止。
+走环境变量通道，见
 [`../../docs/reference/ref-decision-tables.md`](../../docs/reference/ref-decision-tables.md) 表 3。

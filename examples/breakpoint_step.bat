@@ -1,89 +1,132 @@
 @echo off
 setlocal
 
-:: 示例：断点、单步、观察点（每一步都是一个自包含的单会话工作流）
+rem Run from the repository root: the .js scripts find session\session.js by walking up
+rem from the process CWD, so a caller may start this pipeline from anywhere but the
+rem child processes must not inherit that directory.
+cd /d "%~dp0.."
+
+:: Example: run to main, step, then watch a write -- three single-session workflows.
+:: Each step is ONE DSS session and sets up what it needs itself (see the WHY ONE SESSION comments
+:: below): breakpoints and single-stepping are session state, so a chain of separate .js calls
+:: cannot carry them from one step to the next.
 :: Usage: breakpoint_step.bat [ccxml_path] [out_path]
-:: 默认值来自仓库根的 ccs20_0_1.conf；缺键直接报错（本仓库没有内置回落）。
-::
-:: 为什么这里每一步都要重新"烧录+动作"（看起来很浪费）：
-:: 断点、单步位置、符号表全都活在会话里，跨脚本不保留。实测证据：
-::   * 一个脚本设断点（打印 "Breakpoint set, ID: 9"）后，另一个脚本跑 1000 ms 的 PC 是
-::     0x3001ab，并没有停在断点地址上；
-::   * 单步只有"目标已停机"时才有意义，而目标在脚本之间是自由运行的。
-:: 所以"设断点"和"跑到断点"必须在同一个脚本里完成——这就是 workflows\ 存在的理由。
-:: 会话边界与证据见 session/session.js（会话边界）。
+:: If arguments are omitted, the defaults below are used.
+:: To use another board/chip, pass your own ccxml and out file, e.g.:
+::   breakpoint_step.bat <ccxml_path> <out_path>
 
-set "ROOT=%~dp0.."
-set "CONFIG=%ROOT%\ccs20_0_1.conf"
-
-set "CCXML_CFG=" & set "OUT_CFG=" & set "ROOT_CFG=" & set "WATCH_CFG="
-if exist "%CONFIG%" for /f "usebackq tokens=1* delims== eol=#" %%a in ("%CONFIG%") do (
-    if /i "%%a"=="CCXML" set "CCXML_CFG=%%b"
-    if /i "%%a"=="OUT" set "OUT_CFG=%%b"
-    if /i "%%a"=="CCS_ROOT" set "ROOT_CFG=%%b"
-    if /i "%%a"=="WATCH_ADDR" set "WATCH_CFG=%%b"
+:: Defaults come from ccs12_2_0.conf at the repository root (see ccs12_2_0.conf.example).
+:: Precedence is PER KEY, not one merged order (see ccs12_2_0.conf.example):
+::   ccxml    : %1, then CCS_CCXML, then ccs12_2_0.conf [ccxml], then FAIL (exit 1)
+::   out      : %2, then CCS_OUT, then ccs12_2_0.conf [out], then FAIL (exit 1)
+::   ccs_root : ccs12_2_0.conf [ccs_root], then CCS_ROOT, then FAIL (exit 1)
+:: The .vbs launchers read CCS12_2_0_ROOT instead; setting that variable has no effect here.
+:: No built-in defaults since (portability fix, same rule on both implementations).
+:: The watch address (watch_addr recipe key) comes from ccs12_2_0.conf too.
+set ROOT=%~dp0..
+for /f "usebackq eol=; tokens=1* delims==" %%a in ("%~dp0..\ccs12_2_0.conf") do (
+    if /i "%%a"=="ccs_root"  set "CCS_ROOT=%%b"
+    if /i "%%a"=="ccxml"     set "CCXML_CFG=%%b"
+    if /i "%%a"=="out"       set "OUT_CFG=%%b"
+    if /i "%%a"=="watch_addr" set "WATCH_CFG=%%b"
 )
-
-set "RUN=%CCS20_0_1_ROOT%"
-if "%RUN%"=="" set "RUN=%ROOT_CFG%"
-if "%RUN%"=="" (
-    echo ERROR: CCS_ROOT not configured - set env CCS20_0_1_ROOT or set CCS_ROOT in ccs20_0_1.conf.
+if not defined CCS_ROOT (
+    echo CCS12_2_0_RESULT=FAIL config: ccs_root not configured in ccs12_2_0.conf
     exit /b 1
 )
-set "RUN=%RUN%\ccs\scripting\run.bat"
-if not exist "%RUN%" (
-    echo ERROR: run.bat not found: %RUN%
+set "DSS=%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat"
+if not exist "%DSS%" (
+    echo CCS12_2_0_RESULT=FAIL config: dss.bat not found: %DSS%
     exit /b 1
 )
 
 set "CCXML=%~1"
 set "OUT=%~2"
+if "%CCXML%"=="" set "CCXML=%CCS_CCXML%"
 if "%CCXML%"=="" set "CCXML=%CCXML_CFG%"
 if "%CCXML%"=="" (
-    echo ERROR: CCXML not configured - pass it as arg 1 or set CCXML in ccs20_0_1.conf.
+    echo CCS12_2_0_RESULT=FAIL config: ccxml not configured in ccs12_2_0.conf
     exit /b 1
 )
+if "%OUT%"=="" set "OUT=%CCS_OUT%"
 if "%OUT%"=="" set "OUT=%OUT_CFG%"
 if "%OUT%"=="" (
-    echo ERROR: OUT not configured - pass it as arg 2 or set OUT in ccs20_0_1.conf.
+    echo CCS12_2_0_RESULT=FAIL config: out not configured in ccs12_2_0.conf
+    exit /b 1
+)
+if not defined WATCH_CFG (
+    echo CCS12_2_0_RESULT=FAIL config: watch_addr not configured in ccs12_2_0.conf
     exit /b 1
 )
 
-:: 固件配方只认 ccs20_0_1.conf：换固件改配置键，不改本文件。
-if "%WATCH_CFG%"=="" (
-    echo ERROR: WATCH_ADDR not configured in ccs20_0_1.conf.
+:: dss.bat's own process exit code is 0 whatever the script does (measured with
+:: System.exit(1), System.exit(7), a natural end and a nonexistent script path).
+:: The cmd-level errorlevel does carry the JVM's code when it is read after the
+:: call -- on a following line, or with delayed expansion on (cmd /v:on) -- but
+:: without delayed expansion it is expanded before the call runs and is always 0
+:: (a measurement artifact, measured for System.exit(7) as well). A natural end
+:: and a nonexistent script path both read 0 too, so a 0 proves neither that the
+:: script ran nor that it succeeded. Each step is therefore judged by the
+:: CCS12_2_0_RESULT marker line in the log captured below, never by %errorlevel%.
+rem --- Step 1: load the program, set a breakpoint at main, run to it -- ONE session.
+rem WHY ONE SESSION: breakpoints are session state (DebugServer.terminate() drops them), so a
+rem chain like "bp_set.js then target_run.js" cannot work -- the breakpoint dies when the
+rem first session closes and the run is free. Every step below is therefore a
+rem self-contained single-session workflow; a breakpoint/step sequence that must share
+rem state is written as one workflows\ script and called once.
+set "LOG1=%TEMP%\ccs12_2_0_breakpoint_step_1.log"
+call "%DSS%" "%ROOT%\workflows\ccs12_2_0_run_to_bp.js" "%CCXML%" "%OUT%" main > "%LOG1%" 2>&1
+findstr /b /c:"CCS12_2_0_RESULT=OK" "%LOG1%" >nul
+if errorlevel 1 (
+    echo Run to breakpoint failed.
+    call :show_failure "%LOG1%"
+    del "%LOG1%" >nul 2>&1
+    echo CCS12_2_0_RESULT=FAIL run_to_bp
     exit /b 1
 )
 
-echo.
-echo [1/3] Run to a breakpoint at main
-:: loadProgram 结束时目标就停在 main，所以这一步会报告"已经在 main"（这是正常的，不是失败）。
-call "%RUN%" "%ROOT%\workflows\ccs20_0_1_run_to_bp.js" "%CCXML%" "%OUT%" main
-if %errorlevel% neq 0 (
-    echo Run-to-breakpoint failed.
-    exit /b %errorlevel%
+rem 2 s settle wait. timeout aborts when stdin is not a console (measured), so it would not wait when the output is captured; ping always waits.
+ping -n 3 127.0.0.1 >nul
+rem --- Step 2: two single steps at main -- again ONE session (it sets its own breakpoint).
+set "LOG2=%TEMP%\ccs12_2_0_breakpoint_step_2.log"
+call "%DSS%" "%ROOT%\workflows\ccs12_2_0_step.js" "%CCXML%" "%OUT%" 2 --from main --kind into > "%LOG2%" 2>&1
+findstr /b /c:"CCS12_2_0_RESULT=OK" "%LOG2%" >nul
+if errorlevel 1 (
+    echo Step twice failed.
+    call :show_failure "%LOG2%"
+    del "%LOG1%" "%LOG2%" >nul 2>&1
+    echo CCS12_2_0_RESULT=FAIL step
+    exit /b 1
 )
 
+rem 2 s settle wait. timeout aborts when stdin is not a console (measured), so it would not wait when the output is captured; ping always waits.
 ping -n 3 127.0.0.1 >nul
-
-echo.
-echo [2/3] Assembly-level single step x5
-call "%RUN%" "%ROOT%\workflows\ccs20_0_1_step.js" "%CCXML%" "%OUT%" 5 --kind asm
-if %errorlevel% neq 0 (
-    echo Stepping failed.
-    exit /b %errorlevel%
-)
-
-ping -n 3 127.0.0.1 >nul
-
-echo.
-echo [3/3] Watch for a write to %WATCH_CFG% and report the writing instruction
-:: 触发时报告的 PC 就是"做那次写"的指令地址；要在 CCS GUI 里看它对应的源码行。
-call "%RUN%" "%ROOT%\workflows\ccs20_0_1_watch_write.js" "%CCXML%" "%OUT%" "%WATCH_CFG%"
-if %errorlevel% neq 0 (
+rem --- Step 3: watch a write to %WATCH_CFG% -- ONE session (watchpoints are session state too).
+set "LOG3=%TEMP%\ccs12_2_0_breakpoint_step_3.log"
+call "%DSS%" "%ROOT%\workflows\ccs12_2_0_watch_write.js" "%CCXML%" "%OUT%" %WATCH_CFG% > "%LOG3%" 2>&1
+findstr /b /c:"CCS12_2_0_RESULT=OK" "%LOG3%" >nul
+if errorlevel 1 (
     echo Watchpoint did not trigger.
-    exit /b %errorlevel%
+    call :show_failure "%LOG3%"
+    del "%LOG1%" "%LOG2%" "%LOG3%" >nul 2>&1
+    echo CCS12_2_0_RESULT=FAIL watch_write
+    exit /b 1
 )
 
-echo.
-echo Done: all three single-session debug workflows completed.
+del "%LOG1%" "%LOG2%" "%LOG3%" >nul 2>&1
+echo CCS12_2_0_RESULT=OK
+exit /b 0
+
+:: Show why a step failed. dss.bat hides the exit status, so the only reliable
+:: evidence is the log captured above: print the CCS12_2_0_RESULT marker line (the
+:: reason the step was judged failed) and then the captured output. The whole
+:: log is printed rather than a fixed tail because batch has no tail primitive
+:: that is both safe against output containing cmd metacharacters and free of
+:: interactive paging.
+:show_failure
+echo --- CCS12_2_0_RESULT marker ---
+findstr /c:"CCS12_2_0_RESULT=" "%~1"
+if errorlevel 1 echo --- no CCS12_2_0_RESULT line was found in the log ---
+echo --- captured output ---
+type "%~1"
+exit /b 0

@@ -4,12 +4,12 @@
 
 | 脚本 | 一句话 |
 |---|---|
-| `ccs20_0_1_check_connection.js` | 连上目标并报告结果 |
-| `ccs20_0_1_target_state.js` | 报告核名、连接、停机、PC、可用复位类型与关键调试设置 |
-| `ccs20_0_1_target_run.js` | 让目标继续运行（**离开时不停机**） |
-| `ccs20_0_1_target_halt.js` | 把目标停住 |
-| `ccs20_0_1_target_reset.js` | 复位；`--list` 列出可用复位类型 |
-| `ccs20_0_1_run_for_ms.js` | 运行 N 毫秒后停住，报告前后 PC |
+| `ccs12_2_0_check_connection.js` | 连上目标并报告结果 |
+| `ccs12_2_0_target_state.js` | 报告核名、连接、停机、PC、可用复位类型与关键调试设置 |
+| `ccs12_2_0_target_run.js` | 让目标继续运行（**离开时不停机**） |
+| `ccs12_2_0_target_halt.js` | 把目标停住 |
+| `ccs12_2_0_target_reset.js` | 复位；`--list` 列出可用复位类型 |
+| `ccs12_2_0_run_for_ms.js` | 运行 N 毫秒后停住，报告前后 PC |
 
 每个脚本都配同名 `.vbs`。逐参数说明见
 [`../../docs/reference/ref-scripts.md`](../../docs/reference/ref-scripts.md)。

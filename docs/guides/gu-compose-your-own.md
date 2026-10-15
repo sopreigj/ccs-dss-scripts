@@ -46,13 +46,19 @@ atomic/<分类>/…js            workflows/…js      ← 你的两个入口
 | 你的一串活 | 能拆吗 | 为什么 |
 |---|---|---|
 | 读内存 A → 读内存 B → 读寄存器 C | **能**。三个互不依赖的 `atomic/` 调用 | 每一步自己开会话都能得到答案 |
-| 烧录 → 运行 → 停机 → 读变量 | **不能**。用 `workflows/ccs20_0_1_load_run_read.js` | "运行之后那一刻的值"属于那一次会话；拆开后第三步是**另一次**会话，读到的是**另一个时刻** |
-| 写变量 → 运行 → 回读确认 | **不能**。用 `workflows/ccs20_0_1_load_write_run_read.js` | 同上，而且还要靠会话内的 `--settle` 时序 |
-| 设断点 → 跑到断点 | **不能**。用 `workflows/ccs20_0_1_run_to_bp.js` | 断点是会话的子对象，拆开后第二步的会话里没有它 |
+| 烧录 → 运行 → 停机 → 读变量 | **不能**。用 `workflows/ccs12_2_0_load_run_read.js` | "运行之后那一刻的值"属于那一次会话；拆开后第三步是**另一次**会话，读到的是**另一个时刻** |
+| 写变量 → 运行 → 回读确认 | **不能**。用 `workflows/ccs12_2_0_load_write_run_read.js` | 同上，而且还要靠会话内的 `--settle` 时序 |
+| 设断点 → 跑到断点 | **不能**。用 `workflows/ccs12_2_0_run_to_bp.js` | 断点是会话的子对象，拆开后第二步的会话里没有它 |
 
 ⚠️ **最坑的失败形状**：拆开写**不会报错**。每一步都会各自报告成功，只是**结果不是你想要的**
 （比如读到旧值、或者断点没命中却一路跑下去）。所以"能拆吗"这个问题必须在**动手前**问，
 不能靠"跑一遍没报错"来验证。
+
+> **本栈还有一个特有的坑**：参数里出现 `=` 或空格会让运行器在解析阶段中止
+> （连结果标记行都不会打印）。所以**组合脚本里给脚本传表达式时不能直接写在命令行上**——
+> 必须走环境变量通道（`CCS_WRITE_EXPR` / `CCS_EVAL_EXPR` / `CCS_SYMBOLS`）。
+> 细节见 [`gu-pipelines-ci.md`](gu-pipelines-ci.md) 与
+> [`../reference/ref-decision-tables.md`](../reference/ref-decision-tables.md) 表 3。
 
 ## 4. 你自己那层放哪、叫什么
 
@@ -75,7 +81,7 @@ atomic/<分类>/…js            workflows/…js      ← 你的两个入口
 | 给 Agent / 平台用的适配层 | `tools/`、`adapters/`、`mcp_tools/` |
 | 只负责找 CCS、调运行器、处理退出码 | `runner/`、`launchers/` |
 
-> **不要叫 `orchestration/`。** 仓库里已经有这一层，它的含义是"**被入口调用的、与技术栈无关的流程实现**"
+> **不要叫 `orchestration/`。** 仓库里已经有这一层，它的含义是"**被入口装载并驱动的、与技术栈无关的流程实现**"
 > （见 [`../dev/dev-orchestration-layer.md`](../dev/dev-orchestration-layer.md)），
 > 不是"总调度器"。重名会让下一个人分不清你说的是哪一个。
 
@@ -85,10 +91,12 @@ atomic/<分类>/…js            workflows/…js      ← 你的两个入口
 
 - **用现成的 `atomic/` + `workflows/` 能拼出来** → 写在仓库外，不要动仓库。
   （一个同会话流程，多个动作的顺序由你在你的脚本里决定，这不算改仓库。）
-- **需要一个新的"同会话多步"流程**，而 8 个现成工作流都不合适 → 才往仓库里加一对：
-  `orchestration/<动作>.js`（流程）+ `workflows/ccs20_0_1_<动作>.js`（接线）。
+- **需要一个新的"同会话多步"流程**，而 9 个现成工作流都不合适 → 才往仓库里加一对：
+  `orchestration/<动作>.js`（流程）+ `workflows/ccs12_2_0_<动作>.js`（接线）。
   完整步骤见 [`../dev/dev-adding-a-script.md`](../dev/dev-adding-a-script.md) 与
   [`../dev/dev-orchestration-layer.md`](../dev/dev-orchestration-layer.md)。
+  注意 `orchestration/` 里的代码**必须留在 ES3 子集内**（那份共享代码要与另一套实现通用），
+  见 [`../dev/dev-language-constraints.md`](../dev/dev-language-constraints.md)。
 
 **别为了"看起来整齐"去加脚本**：先查受控词汇表（[`../reference/ref-terms.md`](../reference/ref-terms.md)）
 和现有脚本的用法行——大多数"缺一个脚本"的情况其实是"该用哪个工作流"。
@@ -97,7 +105,8 @@ atomic/<分类>/…js            workflows/…js      ← 你的两个入口
 
 它是一个**面向命令行的调试工具箱**，并且是**为自动化与 AI 助手设计的**：
 
-- 每个脚本有**可靠的成败判据**（本栈是退出码，原因写在输出里），所以调用方能机械判断；
+- 每个脚本都会打印**唯一的一行结果标记**（`CCS12_2_0_RESULT=OK`，失败时 `=FAIL <原因>`），
+  所以调用方不必读退出码就有可靠的判据；
 - 每个脚本自带**用法行**，参数形状固定（位置参数顺序 + `--选项`），不需要先读实现；
 - **多步流程已封装成单个命令**（`workflows/`），调用方不必自己拆步骤、也不必理解会话边界；
 - 每个动作都能**单独运行、单独观察**；

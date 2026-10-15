@@ -4,10 +4,11 @@
 // stack names, no launcher names, only the driver's common name table.
 //
 // WHY THIS MUST BE ONE SESSION: load and run are two atomic scripts that would open two
-// sessions - state across the boundary is not assumed to survive (a fresh connection
-// resetting the target is measured on one implementation; treat the other as unverified) - and
-// chaining them means "reset
-// right after flashing" so the program never runs the way it was loaded. The termination
+// sessions - state across the boundary is not assumed to survive (a session boundary disposes
+// every child object; this stack's connection does not reset the target's RAM, but the loaded
+// program's state is gone either way) - and
+// chaining them means "loaded in one session, run in another" so the program never runs the
+// way it was loaded. The termination
 // rule alone is enough: closing a session disposes every child object and there is no
 // reattach.
 //
@@ -19,7 +20,7 @@
 // THE HALTED/RUNNING QUESTION HAS THREE OUTCOMES, NOT TWO: after the load, ask isHalted()
 // (the strict driver query - errors propagate, report never assumes), print the raw answer
 // with the PC, and only issue the run when the CPU is actually stopped. A target that is
-// already running after the load (possible on stacks whose loadProgram restarts) is
+// already running after the load (possible on stacks whose program load restarts) is
 // reported as such - no second run is issued, because this script's promise is "running",
 // not "ran". A query that cannot be answered is a failure: whether the target is running
 // would then be NOT established, and neither would this script's promise.

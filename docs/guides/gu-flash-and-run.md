@@ -5,9 +5,9 @@
 它们**看起来**可以是三条命令：
 
 ```bat
-run.bat atomic\program\ccs20_0_1_load_program.js      "<ccxml>" "<out>"   :: 只烧录，不运行
-run.bat atomic\target\ccs20_0_1_target_run.js         "<ccxml>"          :: 让它跑
-run.bat atomic\expression\ccs20_0_1_eval_expr.js      "<ccxml>" "<expr>"  :: 读一个变量
+dss.bat atomic\program\ccs12_2_0_load_program.js      "<ccxml>" "<out>"   :: 只烧录，不运行
+dss.bat atomic\target\ccs12_2_0_target_run.js         "<ccxml>"          :: 让它跑
+dss.bat atomic\expression\ccs12_2_0_eval_expr.js      "<ccxml>" "<expr>"  :: 读一个变量
 ```
 
 但这样是错的，原因是**会话就是状态的边界**：
@@ -26,9 +26,9 @@ run.bat atomic\expression\ccs20_0_1_eval_expr.js      "<ccxml>" "<expr>"  :: 读
 
 | 你的目标 | 用哪个 | 参数 |
 |---|---|---|
-| 烧录后**让它一直跑**，立刻释放会话 | `workflows/ccs20_0_1_load_run.js` | `<ccxml> <out>` |
-| 烧录 → 跑 N 毫秒 → 停机 → 读若干表达式 | `workflows/ccs20_0_1_load_run_read.js` | `<ccxml> <out> <run_ms> [表达式...]` |
-| 烧录 → **写**若干表达式 → 跑 N 毫秒 → **读回** | `workflows/ccs20_0_1_load_write_run_read.js` | `<ccxml> <out> <run_ms> [--settle <ms>] [--set "赋值"]... [--read "表达式"]...` |
+| 烧录后**让它一直跑**，立刻释放会话 | `workflows/ccs12_2_0_load_run.js` | `<ccxml> <out>` |
+| 烧录 → 跑 N 毫秒 → 停机 → 读若干表达式 | `workflows/ccs12_2_0_load_run_read.js` | `<ccxml> <out> <run_ms> [表达式...]` |
+| 烧录 → **写**若干表达式 → 跑 N 毫秒 → **读回** | `workflows/ccs12_2_0_load_write_run_read.js` | `<ccxml> <out> <run_ms> [--settle <ms>] [--set "赋值"]... [--read "表达式"]...` |
 
 第二个脚本的表达式列表可以**整体省略**：那样它退化成"纯烧录 → 跑 N 毫秒 → 停机"，
 只报告停机时的 PC，不读任何值。这在"我只要确认它跑起来了"时很有用。
@@ -36,7 +36,8 @@ run.bat atomic\expression\ccs20_0_1_eval_expr.js      "<ccxml>" "<expr>"  :: 读
 ### 例：烧录、跑 2 秒、读一个变量
 
 ```bat
-"%CCS_ROOT%\ccs\scripting\run.bat" workflows\ccs20_0_1_load_run_read.js "<ccxml>" "<out>" 2000 "your_symbol.Var" "PC"
+:: 表达式里有空格或 = 时走环境变量通道（见下方"表达式怎么传"）
+"%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat" workflows\ccs12_2_0_load_run_read.js "<ccxml>" "<out>" 2000 "your_symbol.Var" "PC"
 ```
 
 输出会依次告诉你：连上了、烧进去了、从哪个 PC 开始跑、停了、停机时的 PC、然后是每个表达式的值。
@@ -44,7 +45,9 @@ run.bat atomic\expression\ccs20_0_1_eval_expr.js      "<ccxml>" "<expr>"  :: 读
 ### 例：写一个变量再运行，验证写入有没有生效
 
 ```bat
-"%CCS_ROOT%\ccs\scripting\run.bat" workflows\ccs20_0_1_load_write_run_read.js "<ccxml>" "<out>" 2000 --settle 500 --set "your_symbol.Var = 1" --read "your_symbol.Var"
+set CCS_WRITE_EXPR=your_symbol.Var = 1
+set CCS_EVAL_EXPR=your_symbol.Var
+"%CCS_ROOT%\ccs\ccs_base\scripting\bin\dss.bat" workflows\ccs12_2_0_load_write_run_read.js "<ccxml>" "<out>" 2000 --settle 500
 ```
 
 **`--settle` 是关键**。刚烧录完就写变量、然后立刻运行，读回往往是你写之前的旧值——
@@ -52,8 +55,15 @@ run.bat atomic\expression\ccs20_0_1_eval_expr.js      "<ccxml>" "<expr>"  :: 读
 把启动阶段跑过去，再写，值就留得住。完整原理见
 [`gu-modify-state.md`](gu-modify-state.md)。
 
-> 在 PowerShell 里拼这条命令时注意引号会被 PowerShell 先处理一遍；最稳的做法是把表达式
-> 放进环境变量（脚本也认 `CCS_WRITE_EXPR` / `CCS_EVAL_EXPR`），或者直接用 `cmd` 执行。
+### 表达式怎么传
+
+`--set "x = 1"` 这种写法在 `dss.bat` 这一层会被 cmd 拆掉（见
+[`../start/first-script.md`](../start/first-script.md) 的最后一节），所以带 `=` 或空格的表达式建议走：
+
+| 环境变量 | 用途 |
+|---|---|
+| `CCS_WRITE_EXPR` | 默认的赋值表达式 |
+| `CCS_EVAL_EXPR` | 默认的求值表达式（多个用 `;` 分隔） |
 
 ## 直接用 `examples/` 里的示例
 
@@ -72,12 +82,12 @@ run.bat atomic\expression\ccs20_0_1_eval_expr.js      "<ccxml>" "<expr>"  :: 读
 
 ## 失败长什么样
 
-- 任一步骤失败 → 脚本以 **1** 退出，原因在输出里；
+- 任一步骤失败 → 脚本打印 `CCS12_2_0_RESULT=FAIL <原因>` 并 `exit 1`；
 - 用 `run_one_step.bat` 包起来时，你会看到 `STEP_VERDICT=FAIL`；
 - 用 `pipeline_template.bat` 时，最后一行是 `PIPELINE_VERDICT=FAIL`，且**第一步就停**（fail-fast）。
 
-找不到原因时，先确认退出码与输出的关系：本栈的退出码**是**可靠的，所以"退出码 1 但输出里
-只有正常信息"通常意味着失败发生在很早的阶段（如参数校验），去看输出的前几行。
+找不到失败原因时，先确认输出里到底有没有标记行：**一行标记都没有**通常意味着 JVM 都没起来
+（最常见是参数里的 `=` 或空格把 cmd 弄崩了），而不是脚本内部的失败。
 
 ## 下一步
 

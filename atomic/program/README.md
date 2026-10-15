@@ -4,9 +4,9 @@
 
 | 脚本 | 一句话 |
 |---|---|
-| `ccs20_0_1_load_program.js` | 装载固件（同时带进符号表），**不运行** |
-| `ccs20_0_1_verify_program.js` | 只读校验目标内容与固件文件是否一致 |
-| `ccs20_0_1_flash_op.js` | 列出 / 执行目标支持的 flash 操作，可在同一会话内改写该操作使用的属性 |
+| `ccs12_2_0_load_program.js` | 装载固件（同时带进符号表），**不运行** |
+| `ccs12_2_0_verify_program.js` | 只读校验目标内容与固件文件是否一致 |
+| `ccs12_2_0_flash_op.js` | 列出 / 执行目标支持的 flash 操作，可在同一会话内改写该操作使用的属性 |
 
 每个脚本都配同名 `.vbs`。逐参数说明见
 [`../../docs/reference/ref-scripts.md`](../../docs/reference/ref-scripts.md) 的 `atomic/program/` 一节。
