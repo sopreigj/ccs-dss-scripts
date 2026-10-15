@@ -1,0 +1,36 @@
+# ccs20_0_1.conf.example — CCS 20.0.1 项目配置模板（随仓库发布，不含任何本机值）
+# 首次使用三步：
+#   1. 复制本文件到仓库根：  copy ccs20_0_1.conf.example ccs20_0_1.conf
+#   2. 改名后的 ccs20_0_1.conf 被 .gitignore 排除，不会入库；
+#   3. 把下面每个值成本机实际值（ccs20_0_1.conf.example 里有同款走查）。
+# 所有代码都读这份配置：examples/*.bat、atomic/*.vbs、.js（parseArgs confFill）。
+# 裸调 .js 省略 <ccxml>/<out> 位置参数时，值就从这里补齐——这是"隐私值只在配置里"的机制。
+#
+# 格式：KEY=VALUE；# 开头为整行注释（不支持行端注释）；路径不加引号；键名大小写不敏感。
+
+# --- 机器 / 安装（每台机器不同） ---
+
+# CCS 20.0.1 安装根目录（run.bat 位于其下 ccs\scripting\run.bat）
+# 填你自己的安装位置：CCS 的默认安装根是 <盘符>:\ti\<版本目录>；换 CCS 补丁版本时改这一行即可，脚本不用动。
+CCS_ROOT=<你的 CCS 安装根>
+
+# 目标配置文件（.ccxml，定义下载器 + 芯片型号）——填你自己的绝对路径
+CCXML=<你的目标配置文件>
+
+# 固件文件（.out，同时是符号表来源）——填你自己的绝对路径
+OUT=<你的固件文件>
+
+# --- 固件配方（换固件 / 换项目时改这四个） ---
+
+# 默认表达式：load_set 读回、phase_d 管线、audit 第 10 步、eval_expr 弹窗预填。
+EVAL_EXPR=your_default_variable
+
+# 默认赋值表达式：load_set 示例的 --set、write_expr 弹窗预填（值里允许有 = 和空格）。
+WRITE_EXPR=your_default_variable = 1
+
+# 默认观察点地址：breakpoint_step 第 3 步、driver_smoke 冒烟——必须填"固件持续写"的地址，
+# 否则 driver_smoke 的 watchWrite 步会超时（留 0x0000 即视为未填）。
+WATCH_ADDR=0x0000
+
+# 写变量前的启动等待毫秒（--settle；避开启动阶段的初始化覆盖，见 session/session.js（会话边界））。
+SETTLE_MS=500

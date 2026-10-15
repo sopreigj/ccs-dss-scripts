@@ -1,0 +1,11 @@
+# 行尾与文本属性：Windows 脚本按 CRLF 检出，其余按 LF
+*.bat  text eol=crlf
+*.vbs  text eol=crlf
+*.js   text eol=lf
+*.md   text eol=lf
+*.ps1  text eol=lf
+*.conf text eol=crlf
+*.conf.example text eol=crlf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+LICENSE text eol=lf

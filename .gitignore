@@ -1,0 +1,29 @@
+# Windows artifacts
+Thumbs.db
+desktop.ini
+*.log
+~$*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local environment / secrets (never commit)
+.env
+*.pem
+*.key
+credentials.*
+
+# Machine-local configuration (ships as ccs*.conf.example; copy-rename-fill once per machine)
+ccs*.conf
+
+# Binary / firmware artifacts (never commit: board images embed project names, ccxml embeds probe serial)
+*.out
+*.ccxml
+*.hex
+*.bin
+
+# Test / run artifacts
+*.jsonl
+*.csv

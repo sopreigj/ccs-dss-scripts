@@ -1,0 +1,6 @@
+// Entry point only: wiring for the shared orchestration main
+// Contract: the name table exported by session/orch_driver.js; behavior: orchestration/load_run_read.js header.
+// Usage: run.bat ccs20_0_1_load_run_read.js <ccxml_path> <out_file_path> <run_ms> <expr1> [expr2 ...]
+//   (or set env CCS_EVAL_EXPR ';'-separated)
+var ORCH_MAIN = require("../orchestration/load_run_read.js");
+ORCH_MAIN(require("../session/orch_driver.js"));
